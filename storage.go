@@ -2,8 +2,15 @@ package vsaasstorage
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
+
+	rest "github.com/xompass/vsaas-rest"
 )
 
 // StorageProvider defines the interface that all storage providers must implement
@@ -43,6 +50,18 @@ type FileInfo struct {
 	LastModified *time.Time        `json:"last_modified,omitempty"`
 	IsDirectory  bool              `json:"is_directory"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
+}
+
+// UploadedFileResult represents the result of uploading a file
+type UploadedFileResult struct {
+	FieldName    string     `json:"field_name"`
+	OriginalName string     `json:"original_name"`
+	Filename     string     `json:"filename"`
+	Path         string     `json:"path"`
+	Size         int64      `json:"size"`
+	ContentType  string     `json:"content_type"`
+	ETag         string     `json:"etag,omitempty"`
+	LastModified *time.Time `json:"last_modified,omitempty"`
 }
 
 // FileMetadata contains metadata for file uploads
@@ -146,4 +165,110 @@ func (s *Storage) GenerateSignedURL(ctx context.Context, path string, operation 
 // GetConfig returns the storage configuration
 func (s *Storage) GetConfig() *StorageConfig {
 	return s.config
+}
+
+// generateUniqueFilename generates a unique filename to avoid conflicts
+func generateUniqueFilename(originalFilename string) string {
+	// Get file extension
+	ext := filepath.Ext(originalFilename)
+	nameWithoutExt := strings.TrimSuffix(originalFilename, ext)
+
+	// Generate a short unique identifier (8 characters)
+	uniqueID := make([]byte, 4)
+	rand.Read(uniqueID)
+	uniqueStr := fmt.Sprintf("%x", uniqueID)
+
+	// Combine: originalname_uniqueid.ext
+	if ext != "" {
+		return fmt.Sprintf("%s_%s%s", nameWithoutExt, uniqueStr, ext)
+	}
+	return fmt.Sprintf("%s_%s", nameWithoutExt, uniqueStr)
+}
+
+// UploadFromCtx processes file uploads from a vsaas-rest context and uploads them to the specified destination directory
+func (s *Storage) UploadFromCtx(ctx context.Context, c *rest.EndpointContext, destinationDir string, destinationFilename ...string) ([]*UploadedFileResult, error) {
+	// Check if there are uploaded files
+	allFiles := c.GetAllUploadedFiles()
+	if len(allFiles) == 0 {
+		return nil, NewStorageError(ErrorCodeUploadFailed, "No files uploaded")
+	}
+
+	var results []*UploadedFileResult
+
+	// Process each uploaded file
+	for fieldName, files := range allFiles {
+		for _, uploadedFile := range files {
+			result, err := s.UploadFromUploadedFile(ctx, uploadedFile, fieldName, destinationDir, destinationFilename...)
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, result)
+		}
+	}
+
+	return results, nil
+}
+
+// UploadFromUploadedFile processes a single uploaded file and uploads it to the specified destination directory
+func (s *Storage) UploadFromUploadedFile(ctx context.Context, uploadedFile *rest.UploadedFile, fieldName, destinationDir string, destinationFileName ...string) (*UploadedFileResult, error) {
+	// Generate unique filename to avoid conflicts
+
+	fileName := ""
+	if len(destinationFileName) > 0 && destinationFileName[0] != "" {
+		ext := filepath.Ext(uploadedFile.Filename)
+		fileName = destinationFileName[0] + ext
+	} else {
+		fileName = generateUniqueFilename(uploadedFile.Filename)
+	}
+
+	// Construct the full file path with unique filename
+	filePath := fmt.Sprintf("%s/%s", strings.TrimSuffix(destinationDir, "/"), fileName)
+
+	// Open the uploaded file
+	fileReader, err := os.Open(uploadedFile.Path)
+	if err != nil {
+		return nil, NewStorageErrorWithCause(ErrorCodeUploadFailed, "Failed to open uploaded file", err)
+	}
+	defer fileReader.Close()
+
+	// Prepare metadata
+	metadata := &FileMetadata{
+		ContentType: uploadedFile.MimeType,
+	}
+
+	// Upload to storage
+	fileInfo, err := s.Upload(ctx, filePath, fileReader, metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create result structure
+	result := &UploadedFileResult{
+		FieldName:    fieldName,
+		OriginalName: uploadedFile.OriginalName,
+		Filename:     fileName, // Use the unique filename generated
+		Path:         fileInfo.Path,
+		Size:         fileInfo.Size,
+		ContentType:  fileInfo.ContentType,
+		ETag:         fileInfo.ETag,
+		LastModified: fileInfo.LastModified,
+	}
+
+	return result, nil
+}
+
+// StreamFile streams a file directly to the HTTP response, handling signed URLs, tokens, and direct downloads
+func (s *Storage) StreamFile(c *rest.EndpointContext, path string) error {
+	// Check for token validation (signed URL access)
+	if token := c.EchoCtx.QueryParam("token"); token != "" {
+		return s.handleTokenDownload(c, path, token)
+	}
+
+	// Check for signed URL request
+	if c.EchoCtx.QueryParam("signed_url") == "true" {
+		return s.handleSignedURLRequest(c, path)
+	}
+
+	// Regular download
+	return s.handleDirectDownload(c, path)
 }

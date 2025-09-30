@@ -129,6 +129,118 @@ signedURL, err := storage.GenerateSignedURL(
 )
 ```
 
+## Funciones de Upload Mejoradas
+
+### UploadFromCtx - Upload desde contexto vsaas-rest
+
+Esta función procesa automáticamente todos los archivos subidos desde un contexto de vsaas-rest y los sube al directorio especificado.
+
+```go
+func customUploadHandler(c *rest.EndpointContext) error {
+    // El usuario especifica explícitamente el directorio destino
+    destinationDir := "/user-documents"
+
+    // Control dinámico basado en contexto
+    if userID := c.EchoCtx.QueryParam("user_id"); userID != "" {
+        destinationDir = fmt.Sprintf("/users/%s/documents", userID)
+    }
+
+    // Subir archivos al directorio especificado
+    results, err := storage.UploadFromCtx(c.Context(), c, destinationDir)
+    if err != nil {
+        return err
+    }
+
+    // results es []*UploadedFileResult con tipado fuerte
+    return c.JSON(map[string]interface{}{
+        "message": "Files uploaded successfully",
+        "files":   results,
+    })
+}
+```
+
+### UploadFromUploadedFile - Procesamiento individual
+
+Para casos donde necesitas procesar archivos individualmente con lógica personalizada:
+
+```go
+// Procesar archivos uno por uno
+allFiles := c.GetAllUploadedFiles()
+var results []*vsaasstorage.UploadedFileResult
+
+for fieldName, files := range allFiles {
+    for _, uploadedFile := range files {
+        // Control granular por archivo
+        destinationDir := determineDestinationForFile(uploadedFile)
+
+        result, err := storage.UploadFromUploadedFile(
+            c.Context(),
+            uploadedFile,
+            fieldName,
+            destinationDir,
+        )
+        if err != nil {
+            return err
+        }
+
+        results = append(results, result)
+    }
+}
+```
+
+### UploadedFileResult - Estructura de respuesta
+
+Las nuevas funciones retornan una estructura tipada en lugar de mapas genéricos:
+
+```go
+type UploadedFileResult struct {
+    FieldName    string     `json:"field_name"`    // Nombre del campo del formulario
+    OriginalName string     `json:"original_name"` // Nombre original del archivo
+    Filename     string     `json:"filename"`      // Nombre del archivo subido
+    Path         string     `json:"path"`          // Ruta donde se almacenó
+    Size         int64      `json:"size"`          // Tamaño en bytes
+    ContentType  string     `json:"content_type"`  // Tipo MIME
+    ETag         string     `json:"etag"`          // ETag del archivo
+    LastModified *time.Time `json:"last_modified"` // Fecha de modificación
+}
+```
+
+### UploadHandler Simplificado
+
+El handler de upload ahora es más simple y explícito:
+
+```go
+// Antes: El path se inferí­a de parámetros URL
+uploadHandler := storage.UploadHandler("/base")
+
+// Después: El usuario especifica explícitamente el directorio
+uploadHandler := storage.UploadHandler("/user-documents")
+
+// Registrar el handler
+app.POST("/upload", uploadHandler)
+```
+
+**Beneficios:**
+
+- Control explícito del directorio destino
+- Respuestas con tipado fuerte
+- Lógica reutilizable extraída de handlers
+- Facilita testing y implementaciones personalizadas
+- **Nombres únicos automáticos**: Evita sobrescritura de archivos con el mismo nombre
+
+### Manejo de Nombres Únicos
+
+El sistema genera automáticamente nombres únicos para evitar colisiones:
+
+```go
+// Archivo original: "documento.pdf"
+// Archivo generado: "documento_a1b2c3d4.pdf"
+
+result.OriginalName // "mi_documento.pdf" (preservado)
+result.Filename     // "documento_a1b2c3d4.pdf" (único)
+result.Path         // "/uploads/documento_a1b2c3d4.pdf"
+```
+
 ## Integración con vsaas-rest
 
 ### Configurar endpoints

@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	rest "github.com/xompass/vsaas-rest"
@@ -14,62 +12,20 @@ import (
 )
 
 // UploadHandler creates a handler function for file uploads using vsaas-rest
-func (s *Storage) UploadHandler(basePath string) func(c *rest.EndpointContext) error {
+func (s *Storage) UploadHandler(destinationDir string) func(c *rest.EndpointContext) error {
 	return func(c *rest.EndpointContext) error {
-		// Get the path from URL parameters or use a default structure
-		path := c.EchoCtx.QueryParam("path")
-		if path == "" {
-			// Use a default path structure if not provided
-			path = basePath
-			if pathParam := c.EchoCtx.Param("path"); pathParam != "" {
-				path = fmt.Sprintf("%s/%s", basePath, pathParam)
+		// Use the new UploadFromCtx function
+		results, err := s.UploadFromCtx(c.Context(), c, destinationDir)
+		if err != nil {
+			if storageErr, ok := err.(*StorageError); ok {
+				switch storageErr.Code {
+				case ErrorCodeUploadFailed:
+					return http_errors.BadRequestError(storageErr.Message)
+				default:
+					return http_errors.InternalServerError(storageErr.Message)
+				}
 			}
-		}
-
-		// Check if there are uploaded files
-		allFiles := c.GetAllUploadedFiles()
-		if len(allFiles) == 0 {
-			return http_errors.BadRequestError("No files uploaded")
-		}
-
-		var results []map[string]interface{}
-
-		// Process each uploaded file
-		for fieldName, files := range allFiles {
-			for _, uploadedFile := range files {
-				// Determine the file path
-				filePath := fmt.Sprintf("%s/%s", strings.TrimSuffix(path, "/"), uploadedFile.Filename)
-
-				// Open the uploaded file
-				fileReader, err := os.Open(uploadedFile.Path)
-				if err != nil {
-					return http_errors.InternalServerError("Failed to open uploaded file: " + err.Error())
-				}
-
-				// Prepare metadata
-				metadata := &FileMetadata{
-					ContentType: uploadedFile.MimeType,
-				}
-
-				// Upload to storage
-				fileInfo, err := s.Upload(c.Context(), filePath, fileReader, metadata)
-				fileReader.Close()
-
-				if err != nil {
-					return http_errors.InternalServerError("Failed to upload file: " + err.Error())
-				}
-
-				results = append(results, map[string]interface{}{
-					"field_name":    fieldName,
-					"original_name": uploadedFile.OriginalName,
-					"filename":      uploadedFile.Filename,
-					"path":          fileInfo.Path,
-					"size":          fileInfo.Size,
-					"content_type":  fileInfo.ContentType,
-					"etag":          fileInfo.ETag,
-					"last_modified": fileInfo.LastModified,
-				})
-			}
+			return http_errors.InternalServerError("Failed to upload files: " + err.Error())
 		}
 
 		return c.JSON(map[string]interface{}{
@@ -91,18 +47,7 @@ func (s *Storage) DownloadHandler() func(c *rest.EndpointContext) error {
 			return http_errors.BadRequestError("File path is required")
 		}
 
-		// Check for signed URL request
-		if c.EchoCtx.QueryParam("signed_url") == "true" {
-			return s.handleSignedURLRequest(c, path)
-		}
-
-		// Check for token validation (signed URL access)
-		if token := c.EchoCtx.QueryParam("token"); token != "" {
-			return s.handleTokenDownload(c, path, token)
-		}
-
-		// Regular download
-		return s.handleDirectDownload(c, path)
+		return s.StreamFile(c, path)
 	}
 }
 
