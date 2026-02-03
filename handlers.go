@@ -28,7 +28,7 @@ func (s *Storage) UploadHandler(destinationDir string) func(c *rest.EndpointCont
 			return http_errors.InternalServerError("Failed to upload files: " + err.Error())
 		}
 
-		return c.JSON(map[string]interface{}{
+		return c.JSON(map[string]any{
 			"message": "Files uploaded successfully",
 			"files":   results,
 		})
@@ -203,7 +203,7 @@ func (s *Storage) ListHandler() func(c *rest.EndpointContext) error {
 			return http_errors.InternalServerError("Failed to list files: " + err.Error())
 		}
 
-		return c.JSON(map[string]interface{}{
+		return c.JSON(map[string]any{
 			"path":  path,
 			"files": files,
 			"count": len(files),

@@ -23,24 +23,24 @@ type FileSystemConfig struct {
 
 // S3Config contains configuration for S3 provider
 type S3Config struct {
-	Region              string                 `json:"region"`
-	Endpoint            string                 `json:"endpoint,omitempty"` // Custom endpoint (for MinIO, etc.)
-	Bucket              string                 `json:"bucket"`
-	AccessKeyID         string                 `json:"accessKeyId"`
-	SecretAccessKey     string                 `json:"secretAccessKey"`
-	SessionToken        string                 `json:"sessionToken,omitempty"`        // For temporary credentials
-	UseSSL              bool                   `json:"useSSL"`                        // true for https, false for http
-	ForcePathStyle      bool                   `json:"forcePathStyle"`                // Force path-style addressing
-	DefaultUploadParams map[string]interface{} `json:"defaultUploadParams,omitempty"` // Default parameters for uploads
-	MaxRetries          int                    `json:"maxRetries"`
-	HTTPOptions         *HTTPOptions           `json:"httpOptions,omitempty"`
+	Region              string         `json:"region"`
+	Endpoint            string         `json:"endpoint,omitempty"` // Custom endpoint (for MinIO, etc.)
+	Bucket              string         `json:"bucket"`
+	AccessKeyID         string         `json:"accessKeyId"`
+	SecretAccessKey     string         `json:"secretAccessKey"`
+	SessionToken        string         `json:"sessionToken,omitempty"`        // For temporary credentials
+	UseSSL              bool           `json:"useSSL"`                        // true for https, false for http
+	ForcePathStyle      bool           `json:"forcePathStyle"`                // Force path-style addressing
+	DefaultUploadParams map[string]any `json:"defaultUploadParams,omitempty"` // Default parameters for uploads
+	MaxRetries          int            `json:"maxRetries"`
+	HTTPOptions         *HTTPOptions   `json:"httpOptions,omitempty"`
 }
 
 // HTTPOptions contains HTTP-specific options
 type HTTPOptions struct {
-	Timeout   int         `json:"timeout"`   // Timeout in milliseconds
-	KeepAlive bool        `json:"keepAlive"` // Keep-alive connections
-	Agent     interface{} `json:"agent,omitempty"`
+	Timeout   int  `json:"timeout"`   // Timeout in milliseconds
+	KeepAlive bool `json:"keepAlive"` // Keep-alive connections
+	Agent     any  `json:"agent,omitempty"`
 }
 
 // SignedURLConfig contains configuration for signed URLs
