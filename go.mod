@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/xompass/vsaas-rest v0.0.0-20250729193926-df838a55b2bc
+	github.com/xompass/vsaas-rest v0.1.1
 )
 
 require (
