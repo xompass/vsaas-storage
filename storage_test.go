@@ -57,6 +57,11 @@ func TestFileSystemProvider(t *testing.T) {
 			t.Errorf("Expected size %d, got %d", len(content), fileInfo.Size)
 		}
 
+		// sha256("Hello, World!")
+		if want := "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"; fileInfo.SHA256 != want {
+			t.Errorf("Expected sha256 %s, got %s", want, fileInfo.SHA256)
+		}
+
 		// Test download
 		downloadReader, downloadInfo, err := storage.Download(ctx, "test/hello.txt")
 		if err != nil {

@@ -3,6 +3,8 @@ package vsaasstorage
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -47,6 +49,7 @@ type FileInfo struct {
 	Size         int64             `json:"size"`
 	ContentType  string            `json:"content_type"`
 	ETag         string            `json:"etag,omitempty"`
+	SHA256       string            `json:"sha256,omitempty"` // Hex SHA-256 of the content; set by Storage.Upload
 	LastModified *time.Time        `json:"last_modified,omitempty"`
 	IsDirectory  bool              `json:"is_directory"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
@@ -61,6 +64,7 @@ type UploadedFileResult struct {
 	Size         int64      `json:"size"`
 	ContentType  string     `json:"content_type"`
 	ETag         string     `json:"etag,omitempty"`
+	SHA256       string     `json:"sha256,omitempty"`
 	LastModified *time.Time `json:"last_modified,omitempty"`
 }
 
@@ -112,9 +116,16 @@ func New(config *StorageConfig) (*Storage, error) {
 	}, nil
 }
 
-// Upload uploads a file to the storage
+// Upload uploads a file to the storage. The returned FileInfo carries the
+// SHA-256 of the bytes read from reader, computed while they are written.
 func (s *Storage) Upload(ctx context.Context, path string, reader io.Reader, metadata *FileMetadata) (*FileInfo, error) {
-	return s.provider.Upload(ctx, path, reader, metadata)
+	hash := sha256.New()
+	info, err := s.provider.Upload(ctx, path, io.TeeReader(reader, hash), metadata)
+	if err != nil {
+		return nil, err
+	}
+	info.SHA256 = hex.EncodeToString(hash.Sum(nil))
+	return info, nil
 }
 
 // Download downloads a file from the storage
@@ -251,6 +262,7 @@ func (s *Storage) UploadFromUploadedFile(ctx context.Context, uploadedFile *rest
 		Size:         fileInfo.Size,
 		ContentType:  fileInfo.ContentType,
 		ETag:         fileInfo.ETag,
+		SHA256:       fileInfo.SHA256,
 		LastModified: fileInfo.LastModified,
 	}
 
